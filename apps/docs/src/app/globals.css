@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 240 10% 4%;
+  --primary: 240 5% 10%;
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: 240 10% 4%;
+  --foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+}

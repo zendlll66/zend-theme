@@ -1,0 +1,5 @@
+{
+  "name": "form",
+  "dependencies": ["button", "input"]
+}
+
