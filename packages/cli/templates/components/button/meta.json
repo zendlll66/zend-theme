@@ -1,5 +1,9 @@
 {
   "name": "button",
-  "dependencies": []
+  "type": "ui",
+  "category": "primitive",
+  "description": "Button component with variants",
+  "dependencies": [],
+  "variants": ["default", "outline", "ghost", "destructive", "secondary", "link"]
 }
 

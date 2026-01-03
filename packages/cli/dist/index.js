@@ -120,30 +120,41 @@ async function init() {
 }
 
 // src/add.ts
-import fs6 from "fs-extra";
-import path6 from "path";
+import fs7 from "fs-extra";
+import path7 from "path";
 import chalk2 from "chalk";
 
 // src/components.ts
 import fs3 from "fs-extra";
 import path3 from "path";
 async function getAvailableComponents() {
+  const components = [];
   const componentsDir = path3.join(
     import.meta.dirname,
     "../templates/components"
   );
-  if (!await fs3.pathExists(componentsDir)) {
-    return [];
+  if (await fs3.pathExists(componentsDir)) {
+    const entries = await fs3.readdir(componentsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        components.push(entry.name);
+      } else if (entry.isFile() && entry.name.endsWith(".jsx")) {
+        const componentName = entry.name.replace(/\.jsx$/, "");
+        if (componentName !== "_meta") {
+          components.push(componentName);
+        }
+      }
+    }
   }
-  const entries = await fs3.readdir(componentsDir, { withFileTypes: true });
-  const components = [];
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      components.push(entry.name);
-    } else if (entry.isFile() && entry.name.endsWith(".jsx")) {
-      const componentName = entry.name.replace(/\.jsx$/, "");
-      if (componentName !== "_meta") {
-        components.push(componentName);
+  const templatesDir = path3.join(
+    import.meta.dirname,
+    "../templates/templates"
+  );
+  if (await fs3.pathExists(templatesDir)) {
+    const entries = await fs3.readdir(templatesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        components.push(entry.name);
       }
     }
   }
@@ -185,72 +196,310 @@ function findExistingComponent(name) {
 // src/utils/load-meta.ts
 import fs5 from "fs";
 import path5 from "path";
+
+// src/schema/validate-meta.ts
+var VALID_TYPES = ["ui", "layout", "template"];
+var VALID_CATEGORIES = [
+  "primitive",
+  "composite",
+  "section",
+  "page"
+];
+function validateMeta(meta) {
+  if (!meta || typeof meta !== "object") {
+    throw new Error("meta must be an object");
+  }
+  const m = meta;
+  if (!m.name || typeof m.name !== "string") {
+    throw new Error("meta.name is required and must be a string");
+  }
+  if (!m.type || typeof m.type !== "string") {
+    throw new Error("meta.type is required and must be a string");
+  }
+  if (!VALID_TYPES.includes(m.type)) {
+    throw new Error(
+      `Invalid type "${m.type}". Valid types: ${VALID_TYPES.join(", ")}`
+    );
+  }
+  if (!m.category || typeof m.category !== "string") {
+    throw new Error("meta.category is required and must be a string");
+  }
+  if (!VALID_CATEGORIES.includes(m.category)) {
+    throw new Error(
+      `Invalid category "${m.category}". Valid categories: ${VALID_CATEGORIES.join(", ")}`
+    );
+  }
+  if (m.dependencies !== void 0 && !Array.isArray(m.dependencies)) {
+    throw new Error("meta.dependencies must be an array");
+  }
+  if (m.slots !== void 0 && !Array.isArray(m.slots)) {
+    throw new Error("meta.slots must be an array");
+  }
+  if (m.variants !== void 0 && !Array.isArray(m.variants)) {
+    throw new Error("meta.variants must be an array");
+  }
+  if (m.customizable !== void 0 && typeof m.customizable !== "boolean") {
+    throw new Error("meta.customizable must be a boolean");
+  }
+  if (m.overwrite !== void 0 && typeof m.overwrite !== "boolean") {
+    throw new Error("meta.overwrite must be a boolean");
+  }
+}
+
+// src/utils/load-meta.ts
 function loadMeta(component) {
-  const metaPath = path5.join(
+  let metaPath = path5.join(
     import.meta.dirname,
     "../templates/components",
     component,
     "meta.json"
   );
   if (!fs5.existsSync(metaPath)) {
-    return { name: component, dependencies: [] };
+    metaPath = path5.join(
+      import.meta.dirname,
+      "../templates/templates",
+      component,
+      "meta.json"
+    );
   }
-  return JSON.parse(fs5.readFileSync(metaPath, "utf-8"));
+  if (!fs5.existsSync(metaPath)) {
+    throw new Error(
+      `Component "${component}" not found. Missing meta.json at: ${metaPath}`
+    );
+  }
+  try {
+    const rawMeta = JSON.parse(fs5.readFileSync(metaPath, "utf-8"));
+    validateMeta(rawMeta);
+    return rawMeta;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Invalid meta.json for "${component}": ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+// src/utils/resolve-target-path.ts
+import fs6 from "fs";
+import path6 from "path";
+function resolveTargetPath(meta, cwd = process.cwd()) {
+  const config = loadConfig();
+  const baseDir = config.componentsDir || "src/components";
+  switch (meta.type) {
+    case "ui":
+      if (meta.category === "section") {
+        return baseDir;
+      }
+      return `${baseDir}/ui`;
+    case "layout":
+      return `${baseDir}/layout`;
+    case "template":
+      const srcAppPath = path6.join(cwd, "src/app");
+      const appPath = path6.join(cwd, "app");
+      if (fs6.existsSync(srcAppPath)) {
+        return "src/app";
+      } else if (fs6.existsSync(appPath)) {
+        return "app";
+      } else {
+        return "src/app";
+      }
+    default:
+      throw new Error(`Unknown component type: ${meta.type}`);
+  }
 }
 
 // src/add.ts
 async function addComponent(component) {
   const cwd = process.cwd();
   const config = loadConfig();
-  const sourceNew = path6.join(
-    import.meta.dirname,
-    "../templates/components",
-    component,
-    "index.jsx"
-  );
-  const sourceOld = path6.join(
-    import.meta.dirname,
-    "../templates/components",
-    `${component}.jsx`
-  );
-  let source;
-  if (await fs6.pathExists(sourceNew)) {
-    source = sourceNew;
-  } else if (await fs6.pathExists(sourceOld)) {
-    source = sourceOld;
-  } else {
-    console.log(chalk2.red(`\u274C Component "${component}" not found`));
+  let meta;
+  try {
+    meta = loadMeta(component);
+  } catch (error) {
+    if (error instanceof Error) {
+      console.log(chalk2.red(`\u274C ${error.message}`));
+    } else {
+      console.log(chalk2.red(`\u274C Component "${component}" not found`));
+    }
     return;
   }
-  const targetDir = resolveComponentDir();
-  const target = path6.join(cwd, targetDir, "ui", `${component}.jsx`);
-  const existingFile = findExistingComponent(component);
-  if (existingFile) {
-    if (!config.overwrite) {
+  let templateDir;
+  const componentsTemplateDir = path7.join(
+    import.meta.dirname,
+    "../templates/components",
+    component
+  );
+  const templatesTemplateDir = path7.join(
+    import.meta.dirname,
+    "../templates/templates",
+    component
+  );
+  if (await fs7.pathExists(templatesTemplateDir)) {
+    templateDir = templatesTemplateDir;
+  } else if (await fs7.pathExists(componentsTemplateDir)) {
+    templateDir = componentsTemplateDir;
+  } else {
+    console.log(chalk2.red(`\u274C Template directory not found for "${component}"`));
+    return;
+  }
+  const targetBase = resolveTargetPath(meta, cwd);
+  if (meta.type === "template") {
+    await handleTemplate(templateDir, targetBase, meta, config, cwd);
+  } else if (meta.type === "layout") {
+    await handleLayout(templateDir, targetBase, meta, config, cwd);
+  } else if (meta.type === "ui" && meta.category === "section") {
+    await handleSection(templateDir, targetBase, meta, config, cwd);
+  } else {
+    await handleUI(templateDir, targetBase, meta, config, cwd);
+  }
+}
+async function handleUI(templateDir, targetBase, meta, config, cwd) {
+  const sourceNew = path7.join(templateDir, "index.jsx");
+  const sourceOld = path7.join(templateDir, "index.tsx");
+  const sourceFallback = path7.join(
+    import.meta.dirname,
+    "../templates/components",
+    `${meta.name}.jsx`
+  );
+  let source = null;
+  if (await fs7.pathExists(sourceNew)) {
+    source = sourceNew;
+  } else if (await fs7.pathExists(sourceOld)) {
+    source = sourceOld;
+  } else if (await fs7.pathExists(sourceFallback)) {
+    source = sourceFallback;
+  }
+  if (!source) {
+    console.log(chalk2.red(`\u274C Component file not found for "${meta.name}"`));
+    return;
+  }
+  const actualTargetDir = resolveComponentDir();
+  const target = path7.join(cwd, actualTargetDir, "ui", `${meta.name}.jsx`);
+  const existingFile = findExistingComponent(meta.name);
+  if (existingFile || await fs7.pathExists(target)) {
+    const shouldOverwrite = meta.overwrite ?? config.overwrite ?? false;
+    if (!shouldOverwrite) {
       const ok = await confirm(
-        `\u26A0\uFE0F ${component}.jsx already exists. Overwrite? (y/N) `
+        `\u26A0\uFE0F ${meta.name}.jsx already exists. Overwrite? (y/N) `
       );
       if (!ok) {
-        console.log(chalk2.yellow(`\u23ED ${component} skipped`));
+        console.log(chalk2.yellow(`\u23ED ${meta.name} skipped`));
         return;
       }
     }
-    const targetPath = path6.join(cwd, existingFile);
-    await fs6.copy(source, targetPath, { overwrite: true });
-    console.log(chalk2.green(`\u2714 updated ${component}`));
+    const finalTarget = existingFile ? path7.join(cwd, existingFile) : target;
+    await fs7.copy(source, finalTarget, { overwrite: true });
+    console.log(chalk2.green(`\u2714 updated ${meta.name}`));
     return;
   }
-  await fs6.ensureDir(path6.dirname(target));
-  await fs6.copy(source, target, { overwrite: true });
-  console.log(chalk2.green(`\u2714 added ${component}`));
+  await fs7.ensureDir(path7.dirname(target));
+  await fs7.copy(source, target, { overwrite: true });
+  console.log(chalk2.green(`\u2714 added ${meta.name} to ${actualTargetDir}/ui`));
+}
+async function handleSection(templateDir, targetBase, meta, config, cwd) {
+  const sourceNew = path7.join(templateDir, "index.jsx");
+  const sourceOld = path7.join(templateDir, "index.tsx");
+  let source = null;
+  if (await fs7.pathExists(sourceNew)) {
+    source = sourceNew;
+  } else if (await fs7.pathExists(sourceOld)) {
+    source = sourceOld;
+  }
+  if (!source) {
+    console.log(chalk2.red(`\u274C Section file not found for "${meta.name}"`));
+    return;
+  }
+  const target = path7.join(cwd, targetBase, `${meta.name}.jsx`);
+  if (await fs7.pathExists(target)) {
+    const shouldOverwrite = meta.overwrite ?? config.overwrite ?? false;
+    if (!shouldOverwrite) {
+      const ok = await confirm(
+        `\u26A0\uFE0F ${meta.name}.jsx already exists. Overwrite? (y/N) `
+      );
+      if (!ok) {
+        console.log(chalk2.yellow(`\u23ED ${meta.name} skipped`));
+        return;
+      }
+    }
+    await fs7.copy(source, target, { overwrite: true });
+    console.log(chalk2.green(`\u2714 updated section ${meta.name}`));
+    return;
+  }
+  await fs7.ensureDir(path7.dirname(target));
+  await fs7.copy(source, target, { overwrite: true });
+  console.log(chalk2.green(`\u2714 added section ${meta.name} to ${targetBase}/${meta.name}.jsx`));
+}
+async function handleLayout(templateDir, targetBase, meta, config, cwd) {
+  const target = path7.join(cwd, targetBase, meta.name);
+  if (await fs7.pathExists(target)) {
+    const shouldOverwrite = meta.overwrite ?? config.overwrite ?? false;
+    if (!shouldOverwrite) {
+      const ok = await confirm(
+        `\u26A0\uFE0F Layout "${meta.name}" already exists. Overwrite? (y/N) `
+      );
+      if (!ok) {
+        console.log(chalk2.yellow(`\u23ED ${meta.name} skipped`));
+        return;
+      }
+    }
+  }
+  await fs7.ensureDir(target);
+  const files = await fs7.readdir(templateDir);
+  for (const file of files) {
+    if (file === "meta.json") continue;
+    const sourceFile = path7.join(templateDir, file);
+    const targetFile = path7.join(target, file);
+    if ((await fs7.stat(sourceFile)).isDirectory()) {
+      await fs7.copy(sourceFile, targetFile, { overwrite: true });
+    } else {
+      await fs7.copy(sourceFile, targetFile, { overwrite: true });
+    }
+  }
+  console.log(chalk2.green(`\u2714 added layout ${meta.name}`));
+}
+async function handleTemplate(templateDir, targetBase, meta, config, cwd) {
+  const target = path7.join(cwd, targetBase, meta.name);
+  if (await fs7.pathExists(target)) {
+    const shouldOverwrite = meta.overwrite ?? config.overwrite ?? false;
+    if (!shouldOverwrite) {
+      console.log(chalk2.yellow(`
+\u26A0\uFE0F  Template "${meta.name}" will overwrite existing files:`));
+      console.log(chalk2.gray(`   ${target}`));
+      const ok = await confirm(`
+\u26A0\uFE0F  Are you sure you want to overwrite? (y/N) `);
+      if (!ok) {
+        console.log(chalk2.yellow(`\u23ED ${meta.name} skipped`));
+        return;
+      }
+    }
+  }
+  await fs7.ensureDir(target);
+  const files = await fs7.readdir(templateDir);
+  for (const file of files) {
+    if (file === "meta.json") continue;
+    const sourceFile = path7.join(templateDir, file);
+    const targetFile = path7.join(target, file);
+    if ((await fs7.stat(sourceFile)).isDirectory()) {
+      await fs7.copy(sourceFile, targetFile, { overwrite: true });
+    } else {
+      await fs7.copy(sourceFile, targetFile, { overwrite: true });
+    }
+  }
+  console.log(chalk2.green(`\u2714 added template ${meta.name}`));
 }
 async function addWithDeps(component, installed = /* @__PURE__ */ new Set()) {
   if (installed.has(component)) {
     return;
   }
-  const meta = loadMeta(component);
-  if (meta.dependencies && meta.dependencies.length > 0) {
-    for (const dep of meta.dependencies) {
+  let meta;
+  try {
+    meta = loadMeta(component);
+  } catch (error) {
+    return;
+  }
+  const dependencies = meta.dependencies ?? [];
+  if (dependencies.length > 0) {
+    for (const dep of dependencies) {
       await addWithDeps(dep, installed);
     }
   }
@@ -268,9 +517,18 @@ async function add(component) {
   if (config.autoDependencies) {
     await addWithDeps(component);
   } else {
-    const meta = loadMeta(component);
-    if (meta.dependencies && meta.dependencies.length > 0) {
-      console.log(chalk2.yellow(`\u26A0\uFE0F Dependencies skipped (autoDependencies=false): ${meta.dependencies.join(", ")}`));
+    let meta;
+    try {
+      meta = loadMeta(component);
+    } catch (error) {
+      if (error instanceof Error) {
+        console.log(chalk2.red(`\u274C ${error.message}`));
+      }
+      return;
+    }
+    const dependencies = meta.dependencies ?? [];
+    if (dependencies.length > 0) {
+      console.log(chalk2.yellow(`\u26A0\uFE0F Dependencies skipped (autoDependencies=false): ${dependencies.join(", ")}`));
     }
     await addComponent(component);
   }

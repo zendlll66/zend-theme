@@ -1,5 +1,8 @@
 {
   "name": "form",
+  "type": "ui",
+  "category": "composite",
+  "description": "Form component",
   "dependencies": ["button", "input"]
 }
 

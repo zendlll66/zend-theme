@@ -1,0 +1,8 @@
+{
+  "name": "hero-section",
+  "type": "ui",
+  "category": "section",
+  "description": "Hero section component",
+  "dependencies": ["button"]
+}
+

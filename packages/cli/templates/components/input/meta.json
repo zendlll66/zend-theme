@@ -1,5 +1,8 @@
 {
   "name": "input",
+  "type": "ui",
+  "category": "primitive",
+  "description": "Input component",
   "dependencies": []
 }
 

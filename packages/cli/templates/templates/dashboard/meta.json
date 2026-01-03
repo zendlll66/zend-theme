@@ -1,0 +1,9 @@
+{
+  "name": "dashboard",
+  "type": "template",
+  "category": "page",
+  "description": "Admin dashboard template",
+  "dependencies": ["card", "button", "table"],
+  "overwrite": false
+}
+
